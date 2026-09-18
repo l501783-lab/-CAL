@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B1117">
+<title>複利試算終端</title>
+<meta name="description" content="複利累積、本金反推與退休提領試算，內建 1990 年起的歷史年度報酬回測。">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/favicon-64.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="複利終端">
+<style>
+  :root{
+    --bg:#0B1117;        /* 底：深墨藍黑 */
+    --panel:#121B23;     /* 面板 */
+    --panel-2:#0F171E;
+    --line:#22303B;      /* 髮絲線 */
+    --line-2:#2E4050;
+    --text:#D9E4ED;      /* 主要文字：冷白 */
+    --dim:#7C8FA0;       /* 次要文字 */
+    --key:#E9B84C;       /* 終端機琥珀：關鍵數字與作用中狀態 */
+    --up:#F0524D;        /* 台股慣例：紅漲 */
+    --down:#19BE7D;      /* 綠跌 */
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg)}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:"PingFang TC","Noto Sans TC","Heiti TC","Microsoft JhengHei",system-ui,sans-serif;
+    font-size:15px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .term{max-width:540px;margin:0 auto;padding:0 14px 56px}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* 狀態列 */
+  .status{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:11px;color:var(--dim);
+    padding:11px 0 9px;border-bottom:1px solid var(--line-2);letter-spacing:.06em;
+  }
+  .status b{color:var(--key);font-weight:500}
+
+  /* 區塊標頭 */
+  .bar{
+    display:flex;justify-content:space-between;align-items:center;
+    margin:18px 0 0;padding-bottom:6px;border-bottom:1px solid var(--line);
+    font-size:11.5px;color:var(--dim);font-family:var(--mono);letter-spacing:.1em;
+  }
+
+  /* 模式 */
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:12px}
+  .tabs button{
+    appearance:none;border:0;background:var(--panel-2);color:var(--dim);
+    font:inherit;font-size:13.5px;padding:10px 2px;cursor:pointer;
+  }
+  .tabs button[aria-selected="true"]{background:var(--key);color:#0B1117;font-weight:600}
+
+  /* 輸入列 */
+  .in{
+    display:grid;grid-template-columns:5.5em 1fr auto;align-items:center;gap:8px;
+    border-bottom:1px solid var(--line);padding:2px 0;
+  }
+  .in:focus-within{background:var(--panel)}
+  .in > label{font-size:13px;color:var(--dim)}
+  .in input,.in select{
+    appearance:none;background:transparent;border:0;color:var(--text);
+    font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:17px;
+    text-align:right;padding:9px 0;width:100%;min-width:0;
+  }
+  .in select{font-family:inherit;font-size:14.5px;direction:rtl;color:var(--key)}
+  .in input:focus,.in select:focus{outline:0;color:var(--key)}
+  .in .u{font-family:var(--mono);font-size:11px;color:var(--dim);width:2.6em;text-align:right}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  .hide{display:none !important}
+
+  /* 利率來源 */
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin:12px 0}
+  .seg button{appearance:none;border:0;background:var(--panel-2);color:var(--dim);font:inherit;font-size:12.5px;padding:8px;cursor:pointer}
+  .seg button[aria-selected="true"]{background:var(--panel);color:var(--text);box-shadow:inset 0 -2px 0 var(--key)}
+  .quick{display:flex;gap:6px;margin-top:10px}
+  .quick button{
+    flex:1;appearance:none;background:transparent;border:1px solid var(--line-2);
+    color:var(--dim);font-family:var(--mono);font-size:11.5px;padding:6px 0;cursor:pointer;
+  }
+  .quick button:active{border-color:var(--key);color:var(--key)}
+  .hint{font-family:var(--mono);font-size:11px;color:var(--dim);margin:9px 0 0;letter-spacing:.02em}
+  .chk{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--dim);margin-top:12px;cursor:pointer}
+  .chk input{width:17px;height:17px;accent-color:var(--key);flex:none}
+
+  /* 標的統計條 */
+  .quote{background:var(--panel);border:1px solid var(--line);margin-top:12px;padding:12px 13px}
+  .quote .nm{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .quote .nm span{font-size:13px;color:var(--text)}
+  .quote .nm em{font-family:var(--mono);font-size:11px;color:var(--dim);font-style:normal}
+  .quote .cagr{font-family:var(--mono);font-size:32px;color:var(--key);line-height:1.15;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+  .quote .cagr small{font-size:13px;color:var(--dim);margin-left:6px}
+  .micro{display:grid;grid-template-columns:repeat(2,1fr);gap:3px 14px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+  .micro div{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+  .micro b{font-family:var(--mono);font-weight:400;color:var(--text);font-variant-numeric:tabular-nums}
+
+  /* 結果 */
+  .out{margin-top:20px;border-top:2px solid var(--key);padding-top:14px}
+  .out .cap{font-size:12px;color:var(--dim);font-family:var(--mono);letter-spacing:.04em}
+  .out .fig{
+    font-family:var(--mono);font-variant-numeric:tabular-nums;
+    font-size:clamp(33px,10.5vw,46px);line-height:1.04;letter-spacing:-.025em;
+    margin:5px 0 3px;word-break:break-all;color:var(--text);
+  }
+  .out .sub{font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .kpi{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin-top:14px}
+  .kpi div{background:var(--panel-2);padding:8px 11px}
+  .kpi dt{font-size:11.5px;color:var(--dim);margin:0}
+  .kpi dd{margin:1px 0 0;font-family:var(--mono);font-size:16px;font-variant-numeric:tabular-nums}
+
+  /* 圖 */
+  .warn{margin-top:14px;border:1px solid var(--line);border-left:2px solid var(--key);
+    background:var(--panel);padding:11px 12px;font-size:12.5px;line-height:1.75;color:var(--dim)}
+  .warn h4{margin:0 0 6px;font-size:11.5px;color:var(--key);font-weight:600;letter-spacing:.1em}
+  .warn b{color:var(--text);font-family:var(--mono);font-weight:400;font-variant-numeric:tabular-nums}
+  .warn p{margin:0 0 7px}
+  .warn p:last-child{margin-bottom:0}
+  .warn .tail{color:#5F7182}
+
+  figure{margin:16px 0 0}
+  svg{display:block;width:100%;height:auto}
+  .lg{display:flex;gap:15px;font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px}
+  .lg i{display:inline-block;width:12px;height:2px;vertical-align:3px;margin-right:5px}
+
+  /* 明細 */
+  .tbl{margin-top:18px;border-top:1px solid var(--line);max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}
+  thead th{
+    position:sticky;top:0;background:var(--bg);color:var(--dim);font-weight:400;
+    font-size:10.5px;text-align:right;padding:8px 5px;border-bottom:1px solid var(--line-2);letter-spacing:.05em;
+  }
+  th:first-child,td:first-child{text-align:left}
+  td{text-align:right;padding:7px 5px;border-bottom:1px solid var(--line);color:var(--text)}
+  tbody tr:nth-child(odd){background:var(--panel-2)}
+  .up{color:var(--up)}
+  .down{color:var(--down)}
+  .dim{color:var(--dim)}
+
+  footer{margin-top:22px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:11px;line-height:1.75;color:var(--dim)}
+  .install{position:fixed;left:0;right:0;bottom:0;z-index:20;
+    background:var(--panel);border-top:1px solid var(--key);
+    padding:11px 14px calc(11px + env(safe-area-inset-bottom));
+    display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--dim)}
+  .install span{flex:1;line-height:1.5}
+  .install button{appearance:none;border:0;background:var(--key);color:#0B1117;
+    font:inherit;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;flex:none}
+  .install .x{background:transparent;color:var(--dim);border:1px solid var(--line-2);padding:8px 10px;font-weight:400}
+
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-thumb{background:var(--line-2)}
+</style>
+</head>
+<body>
+<div class="term">
+
+<div class="status">
+  <span><b>COMPOUND</b> · 試算終端</span>
+  <span id="clock">TWD</span>
+</div>
+
+<div class="tabs" role="tablist">
+  <button role="tab" id="m-fv" aria-selected="true">累積</button>
+  <button role="tab" id="m-pv" aria-selected="false">反推</button>
+  <button role="tab" id="m-wd" aria-selected="false">提領</button>
+</div>
+
+<div class="bar"><span>參數</span><span id="mode-note">期初一次投入＋每月定額</span></div>
+
+<div class="in" id="f-pv"><label id="lab-pv">期初本金</label><input type="number" id="pv" inputmode="decimal" value="100" min="0" step="10"><span class="u">萬</span></div>
+<div class="in hide" id="f-target"><label>目標終值</label><input type="number" id="target" inputmode="decimal" value="1000" min="0" step="100"><span class="u">萬</span></div>
+<div class="in" id="f-pmt"><label>每月投入</label><input type="number" id="pmt" inputmode="decimal" value="1" min="0" step="0.1"><span class="u">萬</span></div>
+<div class="pair">
+  <div class="in hide" id="f-wrate"><label>提領率</label><input type="number" id="wrate" inputmode="decimal" value="4" step="0.1" min="0"><span class="u">%</span></div>
+  <div class="in"><label>通膨率</label><input type="number" id="infl" inputmode="decimal" value="2" step="0.1"><span class="u">%</span></div>
+  <div class="in"><label id="lab-years">存續期間</label><input type="number" id="years" inputmode="numeric" value="20" min="1" max="60" step="1"><span class="u">年</span></div>
+</div>
+
+<div class="bar"><span>報酬假設</span><span id="src-note"></span></div>
+
+<div class="seg" role="tablist">
+  <button role="tab" id="s-manual" aria-selected="false">自訂固定報酬</button>
+  <button role="tab" id="s-index" aria-selected="true">歷史區間回測</button>
+</div>
+
+<div id="p-manual" class="hide">
+  <div class="in"><label>年化報酬</label><input type="number" id="rate" inputmode="decimal" value="7" step="0.1"><span class="u">%</span></div>
+</div>
+
+<div id="p-index">
+  <div class="in">
+    <label>標的</label>
+    <select id="idx">
+      <optgroup label="市場指數">
+        <option value="sp500">S&amp;P 500</option>
+        <option value="dow">道瓊工業指數</option>
+        <option value="twse">台灣加權指數</option>
+        <option value="world">MSCI World 全球</option>
+      </optgroup>
+      <optgroup label="台股 ETF">
+        <option value="t50">0050 元大台灣50</option>
+        <option value="t56">0056 元大高股息</option>
+      </optgroup>
+      <optgroup label="個股與商品">
+        <option value="tsmc">台積電 2330</option>
+        <option value="gold">黃金現貨</option>
+      </optgroup>
+    </select><span class="u"></span>
+  </div>
+  <div class="pair">
+    <div class="in"><label>起始年</label><input type="number" id="y0" inputmode="numeric" value="1995" step="1"><span class="u"></span></div>
+    <div class="in"><label>結束年</label><input type="number" id="y1" inputmode="numeric" value="2024" step="1"><span class="u"></span></div>
+  </div>
+  <div class="quick">
+    <button type="button" data-span="10">10Y</button>
+    <button type="button" data-span="15">15Y</button>
+    <button type="button" data-span="20">20Y</button>
+    <button type="button" data-span="30">30Y</button>
+    <button type="button" data-span="all">全期</button>
+  </div>
+  <p class="hint" id="range-hint"></p>
+  <label class="chk"><input type="checkbox" id="replay" checked><span>重播實際年序（含報酬順序風險）</span></label>
+
+  <div class="quote">
+    <div class="nm"><span id="q-name">—</span><em id="q-span">—</em></div>
+    <div class="cagr" id="q-cagr">—<small>年化報酬</small></div>
+    <div class="micro" id="q-micro"></div>
+  </div>
+</div>
+
+<div class="bar"><span>試算結果 · 單位：新台幣萬元</span><span id="res-flag"></span></div>
+
+<section class="out">
+  <p class="cap" id="res-cap">—</p>
+  <div class="fig" id="res-fig">—</div>
+  <p class="sub" id="res-sub">—</p>
+
+  <dl class="kpi">
+    <div><dt id="k1">—</dt><dd id="v1">—</dd></div>
+    <div><dt id="k2">—</dt><dd id="v2">—</dd></div>
+    <div><dt id="k3">—</dt><dd id="v3">—</dd></div>
+    <div><dt id="k4">—</dt><dd id="v4">—</dd></div>
+    <div><dt id="k5">—</dt><dd id="v5">—</dd></div>
+    <div><dt id="k6">—</dt><dd id="v6">—</dd></div>
+  </dl>
+
+  <div class="warn hide" id="revert"></div>
+
+  <figure>
+    <svg id="chart" viewBox="0 0 360 210" role="img" aria-label="資產路徑"></svg>
+    <div class="lg">
+      <span><i style="background:var(--key)"></i><span id="lg1">帳戶價值</span></span>
+      <span><i style="background:var(--dim)"></i><span id="lg2">累計投入</span></span>
+    </div>
+  </figure>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th>年度</th><th>報酬率</th><th id="c3">投入</th><th id="c4">期末餘額</th><th>實質</th></tr></thead>
+      <tbody id="ledger"></tbody>
+    </table>
+  </div>
+</section>
+
+<footer id="note"></footer>
+</div>
+
+<div class="install hide" id="install">
+  <span id="install-txt"></span>
+  <button id="install-go" class="hide">安裝</button>
+  <button id="install-x" class="x">關閉</button>
+</div>
+
+<script>
+/* ═══ 歷史年度報酬資料（%）═══ */
+const START_YEAR = 1990;
+const DATA = {
+  sp500:{name:"S&P 500",note:"含息總報酬（美元計價）",r:[-3.1,30.5,7.6,10.1,1.3,37.6,23.0,33.4,28.6,21.0,-9.1,-11.9,-22.1,28.7,10.9,4.9,15.8,5.5,-37.0,26.5,15.1,2.1,16.0,32.4,13.7,1.4,12.0,21.8,-4.4,31.5,18.4,28.7,-18.1,26.3,25.0]},
+  dow:{name:"道瓊工業指數",note:"含息總報酬（美元計價）",r:[-0.6,23.9,7.4,16.8,5.0,36.9,28.9,24.9,18.1,27.2,-4.7,-5.4,-15.0,28.3,5.3,1.7,19.0,8.9,-31.9,22.7,14.1,8.4,10.2,29.6,10.0,0.2,16.5,28.1,-3.5,25.3,9.7,20.9,-6.9,16.2,15.0]},
+  twse:{name:"台灣加權指數",note:"價格指數，未含股息（新台幣）",r:[-52.9,1.6,-26.6,79.8,17.4,-27.3,34.0,18.1,-21.6,31.6,-43.9,17.1,-19.8,32.3,4.2,6.7,19.5,8.7,-46.0,78.3,9.6,-21.2,8.9,11.8,8.1,-10.4,11.0,15.0,-8.6,23.3,22.8,23.7,-22.4,26.8,28.5]},
+  world:{name:"MSCI World 全球指數",note:"淨報酬（美元計價）",r:[-17.0,18.3,-5.2,22.5,5.1,20.7,13.5,15.8,24.3,24.9,-13.2,-16.8,-19.9,33.1,14.7,9.5,20.1,9.0,-40.7,30.0,11.8,-5.5,15.8,26.7,4.9,-0.9,7.5,22.4,-8.7,27.7,15.9,21.8,-18.1,23.8,18.7]},
+  gold:{name:"黃金現貨",note:"倫敦金價格漲跌，無配息（美元）",r:[-3.1,-10.1,-5.7,17.7,-2.2,1.0,-4.6,-21.4,-0.8,0.9,-5.4,2.5,24.8,19.4,5.6,18.2,22.8,31.4,5.8,23.9,29.5,10.1,7.1,-28.3,-1.7,-10.4,8.6,13.1,-1.6,18.3,25.1,-3.6,-0.3,13.1,27.2]},
+  t50:{name:"0050 元大台灣50",start:2004,note:"含息總報酬（新台幣）",r:[4.2,10.0,20.6,11.2,-43.1,73.8,12.8,-15.8,12.4,11.6,16.6,-6.3,19.7,18.1,-4.9,33.5,31.1,21.9,-21.8,28.6,48.0]},
+  t56:{name:"0056 元大高股息",start:2008,note:"含息總報酬（新台幣）",r:[-46.0,74.8,12.8,-13.0,10.9,6.7,9.4,-3.8,19.1,12.0,-2.9,20.2,11.0,22.0,-17.4,39.0,22.0]},
+  tsmc:{name:"台積電 2330",start:2000,note:"單一個股，含息概估（新台幣）",r:[-47.0,15.0,-44.0,45.0,-19.0,25.0,14.0,-5.0,-25.0,54.0,14.0,11.0,32.0,11.0,36.0,6.0,31.0,30.0,2.0,50.0,63.0,18.0,-24.0,35.0,84.0]}
+};
+const span = d => { const a = d.start || START_YEAR; return [a, a + d.r.length - 1]; };
+
+/* ═══ 工具 ═══ */
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const val = (id,min,max,fb) => { const v = parseFloat($(id).value); return isFinite(v) ? Math.min(max,Math.max(min,Math.round(v))) : fb; };
+const nf = new Intl.NumberFormat("en-US",{maximumFractionDigits:2});
+const UNIT = 10000;                                  // 內部一律以「元」運算，顯示時換算萬元
+const amt = id => Math.max(0, num(id)) * UNIT;       // 讀取以萬元輸入的欄位
+const money = v => {                                 // 輸出萬元，不帶單位字（單位統一在表頭宣告）
+  const w = v/UNIT, a = Math.abs(w);
+  const d = a>=100 ? 0 : a>=10 ? 1 : 2;
+  return (w<0?"-":"") + new Intl.NumberFormat("en-US",{minimumFractionDigits:d,maximumFractionDigits:d}).format(Math.abs(w));
+};
+const pc = v => (v>=0?"+":"") + v.toFixed(2) + "%";
+const UNIT_TAG = '<span style="font-size:.38em;color:var(--dim);margin-left:.4em;letter-spacing:0">萬</span>';
+const short = v => { const w=v/UNIT, a=Math.abs(w);
+  if(a>=10000) return (w/10000).toFixed(1)+"億";
+  return Math.round(w)+"萬"; };
+const cls = v => v>0 ? "up" : v<0 ? "down" : "dim";   // 台股慣例：紅漲綠跌
+
+function mdd(path){ let peak=-Infinity, w=0;
+  path.forEach(v=>{ if(v>peak) peak=v; if(peak>0) w=Math.min(w, v/peak-1); }); return w*100; }
+
+let mode="fv", source="index";
+
+/* ═══ 區間統計 ═══ */
+function backtest(){
+  const d = DATA[$("idx").value], [s0,s1] = span(d);
+  let a = val("y0",s0,s1,s0), b = val("y1",s0,s1,s1);
+  if(a>b) [a,b]=[b,a];
+  let slice = d.r.slice(a-s0, b-s0+1);
+  if(!slice.length) slice = d.r.slice();
+  const n = slice.length;
+  let prod=1, sum=0, idx=[100];
+  slice.forEach(x=>{ prod*=(1+x/100); sum+=x; idx.push(idx[idx.length-1]*(1+x/100)); });
+  const mean = sum/n;
+  const sd = Math.sqrt(slice.reduce((s,x)=>s+(x-mean)**2,0)/Math.max(n-1,1));
+  const cagr = (Math.pow(prod,1/n)-1)*100;
+  return {d,a,b,n,slice,prod,mean,sd,cagr,dd:mdd(idx),
+          pos:slice.filter(x=>x>0).length,
+          best:Math.max(...slice), worst:Math.min(...slice)};
+}
+
+/* ═══ 累積模擬 ═══ */
+function accumulate(pv, pmt, rates){
+  let bal=pv, contrib=pv, rows=[];
+  rates.forEach((r,i)=>{
+    const rm = Math.pow(1+r/100,1/12)-1;
+    for(let m=0;m<12;m++) bal = bal*(1+rm) + pmt;
+    contrib += pmt*12;
+    rows.push({y:i+1, r, add:pmt*12, end:bal, cum:contrib});
+  });
+  return {end:bal, contrib, rows};
+}
+
+/* ═══ 提領模擬 ═══ */
+function decumulate(start, wRate, infl, rates){
+  let bal=start, taken=0, dead=0, rows=[];
+  const first = start*wRate/100;
+  rates.forEach((r,i)=>{
+    const want = first*Math.pow(1+infl/100,i);
+    const got  = Math.min(want, Math.max(bal,0));
+    bal = Math.max(0,(bal-got)*(1+r/100));
+    taken += got;
+    if(!dead && bal<=0) dead = i+1;
+    rows.push({y:i+1, r, want, add:-got, end:bal, cum:taken});
+  });
+  return {end:bal, taken, dead, first, rows};
+}
+
+/* ═══ 均值回歸提醒（僅提領模式）═══ */
+function fullCagr(d){ let p=1; d.r.forEach(x=>p*=1+x/100); return (Math.pow(p,1/d.r.length)-1)*100; }
+
+function revertNote(bt, start, wRate, infl, years, mine){
+  const box = $("revert");
+  box.classList.remove("hide");
+  const tail = `<p class="tail">均值回歸是統計上的傾向，不是保證；報酬也可能長期偏離均值。退休提領規劃宜保留緩衝，並定期檢視。</p>`;
+
+  if(!bt){
+    box.innerHTML = `<h4>均值回歸提醒</h4>`
+      + `<p>目前採固定年化報酬，等於假設每年都剛好賺到平均值。真實市場逐年大幅波動，長期才向均值靠攏——而退休提領最怕的正是<b>開頭幾年</b>就遇到空頭，資產一邊下跌一邊被提領，日後就算報酬回到均值也補不回來。</p>`
+      + `<p>建議切換到「歷史區間回測」並勾選重播實際年序，才看得出這個風險。</p>` + tail;
+    return;
+  }
+
+  const full = fullCagr(bt.d), [s0,s1] = span(bt.d), diff = bt.cagr - full;
+  const alt = decumulate(start, wRate, infl, Array(years).fill(full));
+  const hi = diff >= 1, lo = diff <= -1;
+  const state = hi ? "高於" : lo ? "低於" : "接近";
+
+  box.innerHTML = `<h4>均值回歸提醒</h4>`
+    + `<p>你選的 ${bt.a}–${bt.b} 年化 <b>${pc(bt.cagr)}</b>，${state}${bt.d.name} 全期（${s0}–${s1}）的 <b>${pc(full)}</b>`
+      + (Math.abs(diff)>=0.05 ? `，相差 <b>${Math.abs(diff).toFixed(2)}</b> 個百分點` : ``) + `。`
+      + (hi ? `這段期間表現優於長期水準，若未來向均值回歸，本試算會偏樂觀。`
+        : lo ? `這段期間表現遜於長期水準，本試算相對保守。`
+        : `這段期間與長期水準相去不遠。`) + `</p>`
+    + `<p>改以長期均值 <b>${pc(full)}</b> 等速試算：期末餘額約 <b>${money(alt.end)}</b> 萬`
+      + (alt.dead ? `，資金於<b>第 ${alt.dead} 年</b>耗盡` : `，期末仍有結餘`)
+      + `（本試算為 <b>${money(mine.end)}</b> 萬`
+      + (mine.dead ? `，第 ${mine.dead} 年耗盡` : ``) + `）。</p>`
+    + tail;
+}
+
+/* ═══ 主計算 ═══ */
+function calc(){
+  const years = val("years",1,60,20);
+  const infl  = num("infl");
+  const defl  = i => Math.pow(1+infl/100, i);
+
+  let rates, bt=null, rate;
+  if(source==="manual"){
+    rate = num("rate");
+    rates = Array(years).fill(rate);
+    $("src-note").textContent = "固定年化 " + rate.toFixed(2) + "%";
+  } else {
+    bt = backtest(); rate = bt.cagr;
+    rates = $("replay").checked
+      ? Array.from({length:years},(_,i)=>bt.slice[i%bt.n])
+      : Array(years).fill(bt.cagr);
+    $("src-note").textContent = bt.d.name + " " + bt.a + "–" + bt.b;
+    $("q-name").textContent = bt.d.name;
+    $("q-span").textContent = bt.a + "–" + bt.b + " · " + bt.n + "Y";
+    $("q-cagr").innerHTML = pc(bt.cagr) + "<small>年化報酬</small>";
+    $("q-cagr").style.color = bt.cagr>=0 ? "var(--key)" : "var(--down)";
+    $("q-micro").innerHTML = [
+      ["算術平均", pc(bt.mean)],
+      ["年度標準差", bt.sd.toFixed(2)+"%"],
+      ["最大回撤", bt.dd.toFixed(1)+"%"],
+      ["正報酬年數", bt.pos+"/"+bt.n],
+      ["最佳年度", pc(bt.best)],
+      ["最差年度", pc(bt.worst)]
+    ].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("");
+  }
+
+  // 實際套用到本次試算的年化報酬（重播年序時會與區間 CAGR 不同）
+  let prodR = 1; rates.forEach(r => prodR *= 1 + r/100);
+  const eff = (Math.pow(prodR, 1/years) - 1) * 100;
+  const realRate = ((1+eff/100)/(1+infl/100)-1)*100;
+  let out, A, B, path;
+
+  if(mode==="wd"){
+    const start = amt("pv");
+    const wRate = Math.max(0,num("wrate"));
+    out = decumulate(start, wRate, infl, rates);
+    A = [start, ...out.rows.map(r=>r.end)];
+    B = A.map((v,i)=>v/defl(i));
+    path = A;
+    $("res-flag").textContent = out.dead ? "資金於第 "+out.dead+" 年耗盡" : "期末仍有結餘";
+    $("res-flag").className = out.dead ? "down" : "";
+    $("res-cap").textContent = "第 "+years+" 年期末餘額";
+    $("res-fig").innerHTML = money(out.end)+UNIT_TAG;
+    $("res-fig").style.color = out.end>0 ? "var(--text)" : "var(--down)";
+    $("res-sub").textContent = "實質購買力 "+money(out.end/defl(years))+" 萬（以今日幣值計）";
+    kpi([["首年提領",money(out.first)],["末年提領",money(out.rows[years-1].want)],
+         ["累計提領",money(out.taken)],["實質年化",pc(realRate),"auto"],
+         ["帳戶最大回撤",mdd(path).toFixed(1)+"%","down"],
+         ["餘額／期初",start>0?(out.end/start).toFixed(2)+"x":"—"]]);
+    $("lg1").textContent="帳戶餘額"; $("lg2").textContent="實質購買力";
+    $("c3").textContent="提領"; $("c4").textContent="期末餘額";
+    revertNote(bt, start, wRate, infl, years, out);
+  } else {
+    $("revert").classList.add("hide");
+    let pv;
+    if(mode==="fv"){
+      pv = amt("pv");
+      out = accumulate(pv, amt("pmt"), rates);
+      $("res-cap").textContent = "第 "+years+" 年期末總值";
+    } else {
+      const target = amt("target");
+      const pmt = amt("pmt");
+      const onlyPmt = accumulate(0,pmt,rates).end;
+      const growth  = accumulate(1,0,rates).end;
+      pv = (target-onlyPmt)/growth;
+      out = accumulate(Math.max(0,pv), pmt, rates);
+      $("res-cap").textContent = pv<=0 ? "定額投入已足夠，無需期初本金" : "所需期初本金";
+    }
+    const shown = mode==="fv" ? out.end : Math.max(0,pv);
+    A = [Math.max(0,pv), ...out.rows.map(r=>r.end)];
+    B = [Math.max(0,pv), ...out.rows.map(r=>r.cum)];
+    path = A;
+    $("res-flag").textContent = $("replay").checked && source==="index" ? "實際年序" : "等速複利";
+    $("res-flag").className = "";
+    $("res-fig").innerHTML = money(shown)+UNIT_TAG;
+    $("res-fig").style.color = "var(--text)";
+    $("res-sub").textContent = mode==="fv"
+      ? "實質購買力 "+money(out.end/defl(years))+" 萬（以今日幣值計）"
+      : "須於今日一次性投入";
+    kpi([["累計投入",money(out.contrib)],["淨損益",money(out.end-out.contrib),"auto"],
+         ["名目年化",pc(eff),"auto"],["實質年化",pc(realRate),"auto"],
+         ["帳戶最大回撤",mdd(path).toFixed(1)+"%","down"],
+         ["終值／投入",out.contrib>0?(out.end/out.contrib).toFixed(2)+"x":"—"]]);
+    $("lg1").textContent="帳戶價值"; $("lg2").textContent="累計投入";
+    $("c3").textContent="投入"; $("c4").textContent="期末餘額";
+  }
+
+  draw(A, B, years);
+  ledger(out, defl);
+  $("note").textContent = (bt? bt.d.name+"："+bt.d.note+"。" : "")
+    + "本工具僅供試算，不構成投資建議。歷史報酬為內建年度概略值，未扣除手續費、管理費及稅負，亦不保證未來績效。所有金額單位為新台幣萬元。漲跌色系採台股慣例（紅漲綠跌）。";
+}
+
+// c: "auto" 依正負上色、"dim" 灰、其餘留白
+function kpi(list){
+  list.forEach(([k,v,c],i)=>{
+    const n=i+1; $("k"+n).textContent=k; $("v"+n).textContent=v;
+    $("v"+n).className = c==="auto" ? (String(v).trim().startsWith("-") ? "down" : "up") : (c||"");
+  });
+}
+
+/* ═══ 圖：含座標軸與格線 ═══ */
+function draw(bal, inv, years){
+  const W=360,H=210, L=48,R=8,T=10,Bm=22;
+  const max=Math.max(...bal,...inv,1);
+  const x=i=>L+i*(W-L-R)/Math.max(bal.length-1,1);
+  const y=v=>H-Bm-(v/max)*(H-T-Bm);
+  const line=a=>a.map((v,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
+  let g="";
+  for(let k=0;k<=4;k++){
+    const v=max*k/4, yy=y(v).toFixed(1);
+    g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="var(--line)" stroke-width="1"/>`
+     + `<text x="${L-6}" y="${(+yy+3.5).toFixed(1)}" fill="var(--dim)" font-size="9" text-anchor="end" font-family="ui-monospace,monospace">${short(v)}</text>`;
+  }
+  let xl="";
+  [0, Math.round(years/2), years].forEach(i=>{
+    xl+=`<text x="${x(i).toFixed(1)}" y="${H-7}" fill="var(--dim)" font-size="9" text-anchor="${i===0?"start":i===years?"end":"middle"}" font-family="ui-monospace,monospace">${i}Y</text>`;
+  });
+  $("chart").innerHTML = g
+    + `<path d="${line(bal)} L ${x(bal.length-1).toFixed(1)} ${H-Bm} L ${L} ${H-Bm} Z" fill="var(--key)" opacity=".10"/>`
+    + `<path d="${line(inv)}" fill="none" stroke="var(--dim)" stroke-width="1.1" stroke-dasharray="3 3"/>`
+    + `<path d="${line(bal)}" fill="none" stroke="var(--key)" stroke-width="1.8"/>`
+    + `<line x1="${L}" y1="${H-Bm}" x2="${W-R}" y2="${H-Bm}" stroke="var(--line-2)" stroke-width="1"/>`
+    + xl;
+}
+
+function ledger(out, defl){
+  $("ledger").innerHTML = out.rows.map(r=>
+    `<tr><td class="dim">${String(r.y).padStart(2,"0")}</td>`+
+    `<td class="${cls(r.r)}">${pc(r.r)}</td>`+
+    `<td class="${r.add<0?"down":"dim"}">${money(r.add)}</td>`+
+    `<td>${money(r.end)}</td>`+
+    `<td class="dim">${money(r.end/defl(r.y))}</td></tr>`).join("");
+}
+
+/* ═══ 互動 ═══ */
+function setMode(m){
+  mode=m;
+  ["fv","pv","wd"].forEach(k=>$("m-"+k).setAttribute("aria-selected", m===k));
+  $("f-pv").classList.toggle("hide", m==="pv");
+  $("f-target").classList.toggle("hide", m!=="pv");
+  $("f-pmt").classList.toggle("hide", m==="wd");
+  $("f-wrate").classList.toggle("hide", m!=="wd");
+  $("lab-pv").textContent    = m==="wd" ? "期初資產" : "期初本金";
+  $("lab-years").textContent = m==="wd" ? "提領期間" : "存續期間";
+  $("mode-note").textContent = m==="fv" ? "期初一次投入＋每月定額"
+                             : m==="pv" ? "由目標終值反推期初本金"
+                             : "年初提領，提領金額隨通膨調整";
+  calc();
+}
+function setSource(s){
+  source=s;
+  $("s-manual").setAttribute("aria-selected", s==="manual");
+  $("s-index").setAttribute("aria-selected", s==="index");
+  $("p-manual").classList.toggle("hide", s!=="manual");
+  $("p-index").classList.toggle("hide", s!=="index");
+  calc();
+}
+$("m-fv").onclick=()=>setMode("fv");
+$("m-pv").onclick=()=>setMode("pv");
+$("m-wd").onclick=()=>setMode("wd");
+$("s-manual").onclick=()=>setSource("manual");
+$("s-index").onclick=()=>setSource("index");
+
+["pv","target","pmt","years","rate","y0","y1","replay","wrate","infl"].forEach(id=>{
+  $(id).addEventListener("input", calc);
+  $(id).addEventListener("change", calc);
+});
+
+function updateRange(){
+  const d=DATA[$("idx").value], [s0,s1]=span(d);
+  $("y0").min=$("y1").min=s0; $("y0").max=$("y1").max=s1;
+  $("y0").value=val("y0",s0,s1,s0); $("y1").value=val("y1",s0,s1,s1);
+  $("range-hint").textContent = `資料區間 ${s0}–${s1}，共 ${d.r.length} 個年度，可直接輸入年份`;
+}
+$("idx").addEventListener("change", ()=>{ updateRange(); calc(); });
+$("years").addEventListener("blur", ()=>{ $("years").value=val("years",1,60,20); calc(); });
+["y0","y1"].forEach(id=>$(id).addEventListener("blur", ()=>{
+  const [s0,s1]=span(DATA[$("idx").value]);
+  $(id).value=val(id,s0,s1,id==="y0"?s0:s1); calc();
+}));
+document.querySelectorAll(".quick button").forEach(b=>b.onclick=()=>{
+  const [s0,s1]=span(DATA[$("idx").value]);
+  const n = b.dataset.span==="all" ? s1-s0+1 : parseInt(b.dataset.span,10);
+  $("y1").value=s1; $("y0").value=Math.max(s0,s1-n+1); calc();
+});
+
+$("clock").textContent = "TWD 萬元 · " + new Date().toISOString().slice(0,10).replace(/-/g,".");
+updateRange();
+setMode("fv");
+</script>
+
+<script>
+/* ═══ PWA：離線快取與安裝提示 ═══ */
+if("serviceWorker" in navigator){
+  addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+}
+
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const dismissed  = (()=>{ try{ return localStorage.getItem("install-dismissed")==="1"; }catch(e){ return false; } })();
+const box = document.getElementById("install");
+
+function openBox(txt, showBtn){
+  if(standalone || dismissed) return;
+  document.getElementById("install-txt").textContent = txt;
+  document.getElementById("install-go").classList.toggle("hide", !showBtn);
+  box.classList.remove("hide");
+  document.querySelector(".term").style.paddingBottom = "96px";
+}
+document.getElementById("install-x").onclick = () => {
+  box.classList.add("hide");
+  document.querySelector(".term").style.paddingBottom = "";
+  try{ localStorage.setItem("install-dismissed","1"); }catch(e){}
+};
+
+// Android / 桌面 Chrome：原生安裝流程
+let deferred = null;
+addEventListener("beforeinstallprompt", e => {
+  e.preventDefault(); deferred = e;
+  openBox("將本工具安裝到主畫面，離線也能試算。", true);
+});
+document.getElementById("install-go").onclick = async () => {
+  if(!deferred) return;
+  deferred.prompt(); await deferred.userChoice; deferred = null;
+  box.classList.add("hide");
+};
+addEventListener("appinstalled", () => box.classList.add("hide"));
+
+// iOS Safari 不支援 beforeinstallprompt，改給手動指引
+const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+if(iOS) setTimeout(()=>{
+  if(!box.classList.contains("hide")) return;
+  openBox("在 Safari 點下方「分享」，選「加入主畫面」即可當成 App 使用。", false);
+}, 1500);
+</script>
+</body>
+</html>
